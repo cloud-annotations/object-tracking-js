@@ -40,6 +40,13 @@ const ImageWithCanvas = ({ src, tracker }) => {
 
 const App = () => {
   const [tracker, setTracker] = useState()
+  const [currentIndex, setCurrentIndex] = useState(0)
+
+  const debugCanvas = useRef()
+
+  const videos = [...new Array(376)].map(
+    (_, i) => `/video/${(i + 1).toString().padStart(4, '0')}.jpg`
+  )
 
   useEffect(() => {
     if (!tracker) {
@@ -49,21 +56,33 @@ const App = () => {
         const ymin = 137
         const width = 84
         const height = 145
-        const tracker = new ObjectTracker(image, [xmin, ymin, width, height])
+        const tracker = new ObjectTracker(
+          image,
+          [xmin, ymin, width, height],
+          debugCanvas.current
+        )
         setTracker(tracker)
       }
-      image.src = '/video/0001.jpg'
+      image.src = videos[0]
     }
-  }, [tracker])
+  }, [tracker, videos])
 
-  const videos = [...new Array(1)].map(
-    (_, i) => `/video/${(i + 1).toString().padStart(4, '0')}.jpg`
-  )
+  useEffect(() => {
+    const handleClick = e => {
+      if (e.code === 'ArrowRight') {
+        setCurrentIndex(i => i + 1)
+      }
+    }
+    document.addEventListener('keydown', handleClick)
+    return () => {
+      document.removeEventListener('keydown', handleClick)
+    }
+  }, [])
+
   return (
     <div>
-      {videos.map(imageSrc => (
-        <ImageWithCanvas key={imageSrc} tracker={tracker} src={imageSrc} />
-      ))}
+      <canvas ref={debugCanvas}></canvas>
+      <ImageWithCanvas tracker={tracker} src={videos[currentIndex]} />
     </div>
   )
 }

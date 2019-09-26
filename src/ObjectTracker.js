@@ -9,7 +9,7 @@ const rgbToGrayscale = image => {
   // Reference for converting between RGB and grayscale.
   // https://en.wikipedia.org/wiki/Luma_%28video%29
   const rgbWeights = tf.tensor1d([0.2989, 0.587, 0.114])
-  return tf.sum(image.mul(rgbWeights), 2)
+  return tf.sum(image.mul(rgbWeights), 2) // broadcast across the image.
 }
 
 const gauss = (width, height, sigma, center) => {
@@ -17,7 +17,7 @@ const gauss = (width, height, sigma, center) => {
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const a = 1 / (2 * Math.pow(sigma, 2))
+      const a = 1 / (2 * sigma)
       const fin = Math.exp(
         -(a * Math.pow(x - center[1], 2) + a * Math.pow(y - center[0], 2))
       )
@@ -32,8 +32,8 @@ const fft2 = tensor2d => {
   let realPart
   let imagPart
   if (tensor2d.dtype.includes('complex')) {
-    realPart = tf.real(tensor2d).asType('float32') // weird bug?
-    imagPart = tf.imag(tensor2d).asType('float32')
+    realPart = tf.real(tensor2d)
+    imagPart = tf.imag(tensor2d)
   } else {
     realPart = tensor2d
     imagPart = tf.zerosLike(tensor2d)
@@ -75,19 +75,19 @@ const fft2 = tensor2d => {
 }
 
 const conjugate = complex => {
-  return tf.complex(tf.real(complex), tf.imag(complex).mul(-1))
+  return tf.complex(tf.real(complex), tf.imag(complex).mul(-1)) // broadcast scalar
 }
 
 const hanning = M => {
   const numberLine = tf.linspace(0, M - 1, M)
-  const intermediate = tf.cos(numberLine.mul(2 * Math.PI).div(M - 1))
-  return tf.scalar(0.5).sub(intermediate.mul(0.5))
+  const intermediate = tf.cos(numberLine.mul(2 * Math.PI).div(M - 1)) // multiplying by a scalar
+  return tf.scalar(0.5).sub(intermediate.mul(0.5)) // multiplying by a scalar
 }
 
 const hanningWindow = (width, height) => {
   const col = hanning(width)
   const row = hanning(height).reshape([-1, 1])
-  return col.mul(row)
+  return col.mul(row) // broadcast
 }
 
 const preprocessImage = image => {
@@ -100,17 +100,11 @@ const preprocessImage = image => {
 
   const window = hanningWindow(width, height)
 
-  return normalizedImage.mul(window)
+  return normalizedImage.mulStrict(window)
 }
 
 const randomWarp = image => {
   // TODO: Random scale and rotations.
-  // const a = -180/16
-  // const b = 180/16
-  // const r = a + (b-a) * Math.random()
-
-  // const scale = 1 - 0.1 + 0.2 * Math.random()
-  // const img = imresize(imresize(imrotate(image, r), scale), [sz(1) sz(2)]);
   return image
 }
 
@@ -128,28 +122,81 @@ const findIndex2d = (matrix, val) => {
   }, [])
 }
 
-// tfjs multiplying complex numbers doesn't work.
-const complexMul = (a, b) => tf.complex(tf.real(a).mul(b), tf.imag(a).mul(b))
+// tfjs multiplying complex numbers doesn't work well.
+const complexMul = (a, b) => {
+  // CASES:
+  if (a.dtype && b.dtype) {
+    // complex * complex
+    if (a.dtype.includes('complex') && b.dtype.includes('complex')) {
+      const aReal = tf.real(a)
+      const aImag = tf.imag(a)
+      const bReal = tf.real(b)
+      const bImag = tf.imag(b)
+      const r1r2 = aReal.mulStrict(bReal)
+      const r1i2 = aReal.mulStrict(bImag)
+      const i1r2 = aImag.mulStrict(bReal)
+      const i1i2 = aImag.mulStrict(bImag)
+
+      const real = r1r2.sub(i1i2)
+      const imag = r1i2.add(i1r2)
+      return tf.complex(real, imag)
+    }
+
+    // complex * tensor
+    if (
+      a.dtype.includes('complex') &&
+      b.dtype.includes('float') &&
+      b.rankType >= 1
+    ) {
+      return tf.complex(tf.real(a).mulStrict(b), tf.imag(a).mulStrict(b))
+    }
+
+    // tensor * complex
+    if (
+      a.dtype.includes('float') &&
+      a.rankType >= 1 &&
+      b.dtype.includes('complex')
+    ) {
+      return tf.complex(tf.real(b).mulStrict(a), tf.imag(b).mulStrict(a))
+    }
+  }
+
+  // complex * scalar/num
+  if (a.dtype && a.dtype.includes('complex')) {
+    return tf.complex(tf.real(a).mul(b), tf.imag(a).mul(b)) // allow broadcast
+  }
+
+  // tensor * tensor
+  // tensor * scalar
+  return a.mul(b) // allow broadcast
+
+  // ignore these cases for now...
+  // scalar * complex
+  // scalar * tensor
+  // scalar * scalar
+}
+
 const complexDiv = (a, b) => {
   const aReal = tf.real(a)
   const aImag = tf.imag(a)
   const bReal = tf.real(b)
   const bImag = tf.imag(b)
-  const denom = bImag.mul(bImag).add(bReal.mul(bReal))
+  const denom = bImag.mulStrict(bImag).add(bReal.mulStrict(bReal))
   const real = aReal
-    .mul(bReal)
-    .add(aImag.mul(bImag))
+    .mulStrict(bReal)
+    .add(aImag.mulStrict(bImag))
     .div(denom)
   const imag = bReal
-    .mul(aImag)
-    .sub(aReal.mul(bImag))
+    .mulStrict(aImag)
+    .sub(aReal.mulStrict(bImag))
     .div(denom)
   return tf.complex(real, imag)
 }
 
 class ObjectTracker {
-  constructor(frame, [xmin, ymin, width, height]) {
-    this.initialRect = [xmin, ymin, width, height]
+  constructor(frame, [xmin, ymin, width, height], debug) {
+    this.debug = debug
+    this.rect = [xmin, ymin, width, height]
 
     const image = tf.browser.fromPixels(frame)
     const greyscaleImage = rgbToGrayscale(image)
@@ -166,39 +213,46 @@ class ObjectTracker {
     //   .fft()
     //   .print()
 
-    const gaussFourier = fft2(gaussCrop)
-    gaussFourier.print()
+    this.gaussFourier = fft2(gaussCrop)
 
     const processedImageFourier = fft2(processedImage)
 
-    this.Ai = gaussFourier.mul(conjugate(processedImageFourier))
-    this.Bi = processedImageFourier.mul(conjugate(processedImageFourier))
+    this.Ai = complexMul(this.gaussFourier, conjugate(processedImageFourier))
+    this.Bi = complexMul(fft2(imageCrop), conjugate(fft2(imageCrop)))
 
-    for (let i = 0; i < PRETRAINING_STEPS; i++) {
-      const processedImage = preprocessImage(randomWarp(imageCrop))
-      const processedImageFourier = fft2(processedImage)
-      this.Ai = this.Ai.add(gaussFourier.mul(conjugate(processedImageFourier)))
-      this.Bi = this.Bi.add(
-        processedImageFourier.mul(conjugate(processedImageFourier))
-      )
-    }
+    // for (let i = 0; i < PRETRAINING_STEPS; i++) {
+    //   const processedImage = preprocessImage(randomWarp(imageCrop))
+    //   const processedImageFourier = fft2(processedImage)
+    //   this.Ai = this.Ai.add(
+    //     this.gaussFourier.mulStrict(conjugate(processedImageFourier))
+    //   )
+    //   this.Bi = this.Bi.add(
+    //     processedImageFourier.mulStrict(conjugate(processedImageFourier))
+    //   )
+    // }
 
     this.Ai = complexMul(this.Ai, LEARNING_RATE)
     this.Bi = complexMul(this.Bi, LEARNING_RATE)
+
+    this.Ai.print()
+    this.Bi.print()
   }
 
   next = frame => {
     const image = tf.browser.fromPixels(frame)
     const greyscaleImage = rgbToGrayscale(image)
 
-    const [xmin, ymin, width, height] = this.initialRect
+    const [xmin, ymin, width, height] = this.rect
     const imageCrop = greyscaleImage.slice([ymin, xmin], [height, width])
     const processedImage = preprocessImage(imageCrop)
 
     const Hi = complexDiv(this.Ai, this.Bi)
 
-    const gi = tf.real(fft2(complexMul(Hi, fft2(processedImage))))
-    const normalizedGi = normalize(gi)
+    const gi = fft2(complexMul(Hi, fft2(processedImage)))
+
+    const normalizedGi = normalize(tf.real(gi))
+
+    tf.browser.toPixels(normalizedGi, this.debug)
 
     const maxValue = tf.max(normalizedGi).dataSync()[0]
     const positions = findIndex2d(normalizedGi.arraySync(), maxValue)
@@ -213,7 +267,47 @@ class ObjectTracker {
       .sub(normalizedGi.shape[1] / 2)
       .dataSync()[0]
 
-    return [xmin + dx, ymin + dy, width, height]
+    console.log(dx)
+    console.log(dy)
+
+    // TODO: we need to clip this to bounds.
+    this.rect = [Math.round(xmin + dx), Math.round(ymin + dy), width, height]
+
+    const newImageCrop = greyscaleImage.slice(
+      [this.rect[1], this.rect[0]],
+      [this.rect[3], this.rect[2]]
+    )
+
+    const fi = preprocessImage(newImageCrop)
+
+    // fi = greyscaleImage[clip_pos[1]:clip_pos[3], clip_pos[0]:clip_pos[2]]
+    // fi = pre_process(cv2.resize(fi, (init_gt[2], init_gt[3])))
+
+    // this.Ai =
+    //   LEARNING_RATE * (this.gaussFourier * np.conjugate(np.fft.fft2(fi))) +
+    //   (1 - LEARNING_RATE) * this.Ai
+    // this.Bi =
+    //   LEARNING_RATE * (np.fft.fft2(fi) * np.conjugate(np.fft.fft2(fi))) +
+    //   (1 - LEARNING_RATE) * this.Bi
+
+    const fiFf2 = fft2(fi)
+    const aPart1 = complexMul(
+      complexMul(this.gaussFourier, conjugate(fiFf2)),
+      LEARNING_RATE
+    )
+    const aPart2 = complexMul(this.Ai, 1 - LEARNING_RATE)
+
+    this.Ai = aPart1.addStrict(aPart2)
+
+    const bPart1 = complexMul(
+      complexMul(fiFf2, conjugate(fiFf2)),
+      LEARNING_RATE
+    )
+    const bPart2 = complexMul(this.Bi, 1 - LEARNING_RATE)
+
+    this.Bi = bPart1.addStrict(bPart2)
+
+    return this.rect
   }
 }
 
