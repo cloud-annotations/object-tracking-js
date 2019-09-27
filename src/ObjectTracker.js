@@ -28,6 +28,106 @@ const gauss = (width, height, sigma, center) => {
   return gaussBuffer.toTensor()
 }
 
+const dft = tensor2d => {
+  console.time('w calc')
+  const [height, width] = tensor2d.shape
+
+  const xyw = tf
+    .range(0, width, 1)
+    .mul(tf.reshape(tf.range(0, width, 1), [-1, 1]))
+
+  const xyh = tf
+    .range(0, height, 1)
+    .mul(tf.reshape(tf.range(0, height, 1), [-1, 1]))
+
+  // using euler's formula e^(-2 * pi * i / N) =>
+  // real:  cos(2 * pi / N)
+  // imag: -sin(2 * pi / N)
+  // const ww = tf.complex(
+  //   tf.scalar(Math.cos((2 * Math.PI) / width)),
+  //   tf.scalar(-Math.sin((2 * Math.PI) / width))
+  // )
+
+  // const wh = tf.complex(
+  //   tf.scalar(Math.cos((2 * Math.PI) / height)),
+  //   tf.scalar(-Math.sin((2 * Math.PI) / height))
+  // )
+
+  // const realWW = tf.fill([width, width], Math.cos((2 * Math.PI) / width))
+  // const imagWW = tf.fill([width, width], -Math.sin((2 * Math.PI) / width))
+
+  const realWW = tf.scalar(Math.cos((2 * Math.PI) / width))
+  const imagWW = tf.scalar(-Math.sin((2 * Math.PI) / width))
+
+  const realWH = tf.scalar(Math.cos((2 * Math.PI) / height))
+  const imagWH = tf.scalar(-Math.sin((2 * Math.PI) / height))
+
+  // (r + i)^N =>
+  // real: (r^2 + i^2)^N * cos(N * i / r)
+  // imag: (r^2 + i^2)^N * sin(N * i / r)
+
+  // 0, 0, 0, 0],
+  //    [0, 1, 2, 3],
+  //    [0, 2, 4, 6],
+  //    [0, 3, 6, 9
+
+  const twr = tf
+    .pow(tf.pow(realWW, 2).add(tf.pow(imagWW, 2)), xyw)
+    .mul(tf.cos(tf.atan(imagWW.div(realWW)).mul(xyw)))
+  const twi = tf
+    .pow(tf.pow(realWW, 2).add(tf.pow(imagWW, 2)), xyw)
+    .mul(tf.sin(tf.atan(imagWW.div(realWW)).mul(xyw)))
+
+  const thr = tf
+    .pow(tf.pow(realWH, 2).add(tf.pow(imagWH, 2)), xyh)
+    .mul(tf.cos(tf.atan(imagWH.div(realWH)).mul(xyh)))
+  const thi = tf
+    .pow(tf.pow(realWH, 2).add(tf.pow(imagWH, 2)), xyh)
+    .mul(tf.sin(tf.atan(imagWH.div(realWH)).mul(xyh)))
+
+  console.timeEnd('w calc')
+
+  console.time('actual dft')
+  // tensor2d.print()
+  // tf.complex(twr, twi).print()
+  // num * complex == num * real + num * imag)
+  const gtr = tf.matMul(tensor2d, twr)
+  const gti = tf.matMul(tensor2d, twi)
+
+  // tf.complex(tf.transpose(gtr), tf.transpose(gti)).print()
+  // tf.complex(thr, thi).print()
+
+  // complex * complex == real * real + real * imag + imag * real + imag * imag)
+  const r1r2 = tf.transpose(tf.matMul(tf.transpose(gtr), thr))
+  const r1i2 = tf.transpose(tf.matMul(tf.transpose(gtr), thi))
+  const i1r2 = tf.transpose(tf.matMul(tf.transpose(gti), thr))
+  const i1i2 = tf.transpose(tf.matMul(tf.transpose(gti), thi))
+
+  const real = r1r2.sub(i1i2)
+  const imag = r1i2.add(i1r2)
+  console.timeEnd('actual dft')
+
+  // console.log(real.shape)
+  // console.log(imag.shape)
+  // real.slice([real.shape[0] - 1, real.shape[1] - 1]).print()
+  // imag.slice([imag.shape[0] - 1, imag.shape[1] - 1]).print()
+
+  // tf.complex(tf.tensor1d([-63.99222953]), tf.tensor1d([481.48474884])).print()
+
+  // const asComplex = tf.complex(real, imag)
+
+  // asComplex.print()
+
+  // tf.real(asComplex)
+  //   .slice([tf.real(asComplex).shape[0] - 1, tf.real(asComplex).shape[1] - 1])
+  //   .print()
+  // tf.imag(asComplex)
+  //   .slice([tf.imag(asComplex).shape[0] - 1, tf.imag(asComplex).shape[1] - 1])
+  //   .print()
+
+  return tf.complex(real, imag)
+}
+
 const fft2 = tensor2d => {
   let realPart
   let imagPart
@@ -195,6 +295,19 @@ const complexDiv = (a, b) => {
 
 class ObjectTracker {
   constructor(frame, [xmin, ymin, width, height], debug) {
+    // const g = tf.tensor2d([
+    //   [0, 1, 2, 1],
+    //   [1, 2, 3, 2],
+    //   [2, 3, 4, 3],
+    //   [1, 2, 3, 2],
+    //   [1, 2, 3, 2],
+    //   [2, 3, 4, 3]
+    // ])
+    // const G1 = fft2(g)
+    // const G2 = dft(g)
+    // G1.print()
+    // G2.print()
+
     this.debug = debug
     this.rect = [xmin, ymin, width, height]
 
@@ -214,8 +327,26 @@ class ObjectTracker {
     //   .print()
 
     this.gaussFourier = fft2(gaussCrop)
+    // gaussCrop.print()
+    // this.gaussFourier.print()
+    // console.time('fft2')
+    // const G1 = fft2(gaussCrop)
+    // console.timeEnd('fft2')
+    // console.time('dft')
+    // const G2 = dft(gaussCrop)
+    // console.timeEnd('dft')
+    // G1.print()
+    // G2.print()
 
     const processedImageFourier = fft2(processedImage)
+    const processedImageFourier2 = dft(processedImage)
+    processedImage.print()
+    processedImageFourier.print()
+    processedImageFourier2.print()
+    tf.real(processedImageFourier).print()
+    tf.real(processedImageFourier).print()
+    tf.imag(processedImageFourier2).print()
+    tf.imag(processedImageFourier2).print()
 
     this.Ai = complexMul(this.gaussFourier, conjugate(processedImageFourier))
     this.Bi = complexMul(fft2(imageCrop), conjugate(fft2(imageCrop)))
@@ -233,9 +364,6 @@ class ObjectTracker {
 
     this.Ai = complexMul(this.Ai, LEARNING_RATE)
     this.Bi = complexMul(this.Bi, LEARNING_RATE)
-
-    this.Ai.print()
-    this.Bi.print()
   }
 
   next = frame => {
