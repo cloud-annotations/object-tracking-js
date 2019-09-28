@@ -1,9 +1,12 @@
 import * as tf from '@tensorflow/tfjs'
 
+// NOTE: Don't use tf.complex, it's super buggy as of tfjs@1.2.9
+
 const EPSILON = 1e-7
 const SIGMA = 100
-const PRETRAINING_STEPS = 0
 const LEARNING_RATE = 0.125
+
+const isComplex = x => !x.dtype && x.length === 2
 
 const rgbToGrayscale = image => {
   // Reference for converting between RGB and grayscale.
@@ -28,9 +31,8 @@ const gauss = (width, height, sigma, center) => {
   return gaussBuffer.toTensor()
 }
 
-const dft = tensor2d => {
-  console.time('w calc')
-  const [height, width] = tensor2d.shape
+const dft = a => {
+  const [height, width] = isComplex(a) ? a[0].shape : a.shape
 
   const xyw = tf
     .range(0, width, 1)
@@ -43,18 +45,6 @@ const dft = tensor2d => {
   // using euler's formula e^(-2 * pi * i / N) =>
   // real:  cos(2 * pi / N)
   // imag: -sin(2 * pi / N)
-  // const ww = tf.complex(
-  //   tf.scalar(Math.cos((2 * Math.PI) / width)),
-  //   tf.scalar(-Math.sin((2 * Math.PI) / width))
-  // )
-
-  // const wh = tf.complex(
-  //   tf.scalar(Math.cos((2 * Math.PI) / height)),
-  //   tf.scalar(-Math.sin((2 * Math.PI) / height))
-  // )
-
-  // const realWW = tf.fill([width, width], Math.cos((2 * Math.PI) / width))
-  // const imagWW = tf.fill([width, width], -Math.sin((2 * Math.PI) / width))
 
   const realWW = tf.scalar(Math.cos((2 * Math.PI) / width))
   const imagWW = tf.scalar(-Math.sin((2 * Math.PI) / width))
@@ -65,11 +55,6 @@ const dft = tensor2d => {
   // (r + i)^N =>
   // real: (r^2 + i^2)^N * cos(N * i / r)
   // imag: (r^2 + i^2)^N * sin(N * i / r)
-
-  // 0, 0, 0, 0],
-  //    [0, 1, 2, 3],
-  //    [0, 2, 4, 6],
-  //    [0, 3, 6, 9
 
   const twr = tf
     .pow(tf.pow(realWW, 2).add(tf.pow(imagWW, 2)), xyw)
@@ -85,19 +70,25 @@ const dft = tensor2d => {
     .pow(tf.pow(realWH, 2).add(tf.pow(imagWH, 2)), xyh)
     .mul(tf.sin(tf.atan(imagWH.div(realWH)).mul(xyh)))
 
-  console.timeEnd('w calc')
-
-  console.time('actual dft')
-  // tensor2d.print()
-  // tf.complex(twr, twi).print()
   // num * complex == num * real + num * imag)
-  const gtr = tf.matMul(tensor2d, twr)
-  const gti = tf.matMul(tensor2d, twi)
+  const gt = (() => {
+    if (isComplex(a)) {
+      const [aReal, aImag] = a
+      const r1r2 = tf.matMul(aReal, twr)
+      const r1i2 = tf.matMul(aReal, twi)
+      const i1r2 = tf.matMul(aImag, twr)
+      const i1i2 = tf.matMul(aImag, twi)
 
-  // tf.complex(tf.transpose(gtr), tf.transpose(gti)).print()
-  // tf.complex(thr, thi).print()
+      const real = r1r2.sub(i1i2)
+      const imag = r1i2.add(i1r2)
+
+      return [real, imag]
+    }
+    return [tf.matMul(a, twr), tf.matMul(a, twi)]
+  })()
 
   // complex * complex == real * real + real * imag + imag * real + imag * imag)
+  const [gtr, gti] = gt
   const r1r2 = tf.transpose(tf.matMul(tf.transpose(gtr), thr))
   const r1i2 = tf.transpose(tf.matMul(tf.transpose(gtr), thi))
   const i1r2 = tf.transpose(tf.matMul(tf.transpose(gti), thr))
@@ -105,78 +96,11 @@ const dft = tensor2d => {
 
   const real = r1r2.sub(i1i2)
   const imag = r1i2.add(i1r2)
-  console.timeEnd('actual dft')
 
-  // console.log(real.shape)
-  // console.log(imag.shape)
-  // real.slice([real.shape[0] - 1, real.shape[1] - 1]).print()
-  // imag.slice([imag.shape[0] - 1, imag.shape[1] - 1]).print()
-
-  // tf.complex(tf.tensor1d([-63.99222953]), tf.tensor1d([481.48474884])).print()
-
-  // const asComplex = tf.complex(real, imag)
-
-  // asComplex.print()
-
-  // tf.real(asComplex)
-  //   .slice([tf.real(asComplex).shape[0] - 1, tf.real(asComplex).shape[1] - 1])
-  //   .print()
-  // tf.imag(asComplex)
-  //   .slice([tf.imag(asComplex).shape[0] - 1, tf.imag(asComplex).shape[1] - 1])
-  //   .print()
-
-  return tf.complex(real, imag)
+  return [real, imag]
 }
 
-const fft2 = tensor2d => {
-  let realPart
-  let imagPart
-  if (tensor2d.dtype.includes('complex')) {
-    realPart = tf.real(tensor2d)
-    imagPart = tf.imag(tensor2d)
-  } else {
-    realPart = tensor2d
-    imagPart = tf.zerosLike(tensor2d)
-  }
-
-  const initReal = tf.unstack(realPart, 1)
-  const initImag = tf.unstack(imagPart, 1)
-
-  const unstackedColZip = initReal.map((real, i) => {
-    const imag = initImag[i]
-    const x = tf.complex(real, imag)
-    const res = x.fft()
-    return [tf.real(res).as1D(), tf.imag(res).as1D()]
-  })
-
-  const unstackedRealCol = unstackedColZip.map(x => x[0])
-  const unstackedImagCol = unstackedColZip.map(x => x[1])
-
-  const stackedReal = tf.stack(unstackedRealCol, 1)
-  const stackedImag = tf.stack(unstackedImagCol, 1)
-
-  const unstackedRealRow = tf.unstack(stackedReal)
-  const unstackedImagRow = tf.unstack(stackedImag)
-
-  const unstackedRowZip = unstackedRealRow.map((real, i) => {
-    const imag = unstackedImagRow[i]
-    const x = tf.complex(real, imag)
-    const res = x.fft()
-    return [tf.real(res).as1D(), tf.imag(res).as1D()]
-  })
-
-  const unstackedRealRowUnzipped = unstackedRowZip.map(x => x[0])
-  const unstackedImagRowUnzipped = unstackedRowZip.map(x => x[1])
-
-  const stackedRealFinal = tf.stack(unstackedRealRowUnzipped)
-  const stackedImagFinal = tf.stack(unstackedImagRowUnzipped)
-
-  return tf.complex(stackedRealFinal, stackedImagFinal)
-}
-
-const conjugate = complex => {
-  return tf.complex(tf.real(complex), tf.imag(complex).mul(-1)) // broadcast scalar
-}
+const conjugate = ([real, imag]) => [real, imag.mul(-1)] // broadcast scalar
 
 const hanning = M => {
   const numberLine = tf.linspace(0, M - 1, M)
@@ -203,11 +127,6 @@ const preprocessImage = image => {
   return normalizedImage.mulStrict(window)
 }
 
-const randomWarp = image => {
-  // TODO: Random scale and rotations.
-  return image
-}
-
 const normalize = tensor =>
   tensor.sub(tf.min(tensor)).div(tf.max(tensor).sub(tf.min(tensor)))
 
@@ -222,65 +141,44 @@ const findIndex2d = (matrix, val) => {
   }, [])
 }
 
-// tfjs multiplying complex numbers doesn't work well.
 const complexMul = (a, b) => {
   // CASES:
-  if (a.dtype && b.dtype) {
-    // complex * complex
-    if (a.dtype.includes('complex') && b.dtype.includes('complex')) {
-      const aReal = tf.real(a)
-      const aImag = tf.imag(a)
-      const bReal = tf.real(b)
-      const bImag = tf.imag(b)
-      const r1r2 = aReal.mulStrict(bReal)
-      const r1i2 = aReal.mulStrict(bImag)
-      const i1r2 = aImag.mulStrict(bReal)
-      const i1i2 = aImag.mulStrict(bImag)
+  // complex * complex
+  if (isComplex(a) && isComplex(b)) {
+    const [aReal, aImag] = a
+    const [bReal, bImag] = b
+    const r1r2 = aReal.mulStrict(bReal)
+    const r1i2 = aReal.mulStrict(bImag)
+    const i1r2 = aImag.mulStrict(bReal)
+    const i1i2 = aImag.mulStrict(bImag)
 
-      const real = r1r2.sub(i1i2)
-      const imag = r1i2.add(i1r2)
-      return tf.complex(real, imag)
-    }
-
-    // complex * tensor
-    if (
-      a.dtype.includes('complex') &&
-      b.dtype.includes('float') &&
-      b.rankType >= 1
-    ) {
-      return tf.complex(tf.real(a).mulStrict(b), tf.imag(a).mulStrict(b))
-    }
-
-    // tensor * complex
-    if (
-      a.dtype.includes('float') &&
-      a.rankType >= 1 &&
-      b.dtype.includes('complex')
-    ) {
-      return tf.complex(tf.real(b).mulStrict(a), tf.imag(b).mulStrict(a))
-    }
+    const real = r1r2.sub(i1i2)
+    const imag = r1i2.add(i1r2)
+    return [real, imag]
   }
 
-  // complex * scalar/num
-  if (a.dtype && a.dtype.includes('complex')) {
-    return tf.complex(tf.real(a).mul(b), tf.imag(a).mul(b)) // allow broadcast
+  // complex * tensor
+  // complex * scalar
+  if (isComplex(a)) {
+    const [aReal, aImag] = a
+    return [aReal.mul(b), aImag.mul(b)] // allow broadcast
+  }
+
+  // tensor * complex
+  // scalar * complex
+  if (isComplex(b)) {
+    const [bReal, bImag] = b
+    return [bReal.mul(a), bImag.mul(a)] // allow broadcast
   }
 
   // tensor * tensor
   // tensor * scalar
-  return a.mul(b) // allow broadcast
-
-  // ignore these cases for now...
-  // scalar * complex
   // scalar * tensor
   // scalar * scalar
+  return tf.mul(a, b) // allow broadcast
 }
 
-const complexDiv = (a, b) => {
-  const aReal = tf.real(a)
-  const aImag = tf.imag(a)
-  const bReal = tf.real(b)
-  const bImag = tf.imag(b)
+const complexDiv = ([aReal, aImag], [bReal, bImag]) => {
   const denom = bImag.mulStrict(bImag).add(bReal.mulStrict(bReal))
   const real = aReal
     .mulStrict(bReal)
@@ -290,24 +188,11 @@ const complexDiv = (a, b) => {
     .mulStrict(aImag)
     .sub(aReal.mulStrict(bImag))
     .div(denom)
-  return tf.complex(real, imag)
+  return [real, imag]
 }
 
 class ObjectTracker {
   constructor(frame, [xmin, ymin, width, height], debug) {
-    // const g = tf.tensor2d([
-    //   [0, 1, 2, 1],
-    //   [1, 2, 3, 2],
-    //   [2, 3, 4, 3],
-    //   [1, 2, 3, 2],
-    //   [1, 2, 3, 2],
-    //   [2, 3, 4, 3]
-    // ])
-    // const G1 = fft2(g)
-    // const G2 = dft(g)
-    // G1.print()
-    // G2.print()
-
     this.debug = debug
     this.rect = [xmin, ymin, width, height]
 
@@ -322,45 +207,11 @@ class ObjectTracker {
     const imageCrop = greyscaleImage.slice([ymin, xmin], [height, width])
     const processedImage = preprocessImage(imageCrop)
 
-    // tf.complex(gaussCrop.flatten(), gaussCrop.flatten().zerosLike())
-    //   .fft()
-    //   .print()
-
-    this.gaussFourier = fft2(gaussCrop)
-    // gaussCrop.print()
-    // this.gaussFourier.print()
-    // console.time('fft2')
-    // const G1 = fft2(gaussCrop)
-    // console.timeEnd('fft2')
-    // console.time('dft')
-    // const G2 = dft(gaussCrop)
-    // console.timeEnd('dft')
-    // G1.print()
-    // G2.print()
-
-    const processedImageFourier = fft2(processedImage)
-    const processedImageFourier2 = dft(processedImage)
-    processedImage.print()
-    processedImageFourier.print()
-    processedImageFourier2.print()
-    tf.real(processedImageFourier).print()
-    tf.real(processedImageFourier).print()
-    tf.imag(processedImageFourier2).print()
-    tf.imag(processedImageFourier2).print()
+    this.gaussFourier = dft(gaussCrop)
+    const processedImageFourier = dft(processedImage)
 
     this.Ai = complexMul(this.gaussFourier, conjugate(processedImageFourier))
-    this.Bi = complexMul(fft2(imageCrop), conjugate(fft2(imageCrop)))
-
-    // for (let i = 0; i < PRETRAINING_STEPS; i++) {
-    //   const processedImage = preprocessImage(randomWarp(imageCrop))
-    //   const processedImageFourier = fft2(processedImage)
-    //   this.Ai = this.Ai.add(
-    //     this.gaussFourier.mulStrict(conjugate(processedImageFourier))
-    //   )
-    //   this.Bi = this.Bi.add(
-    //     processedImageFourier.mulStrict(conjugate(processedImageFourier))
-    //   )
-    // }
+    this.Bi = complexMul(dft(imageCrop), conjugate(dft(imageCrop)))
 
     this.Ai = complexMul(this.Ai, LEARNING_RATE)
     this.Bi = complexMul(this.Bi, LEARNING_RATE)
@@ -376,9 +227,14 @@ class ObjectTracker {
 
     const Hi = complexDiv(this.Ai, this.Bi)
 
-    const gi = fft2(complexMul(Hi, fft2(processedImage)))
+    const Gi = complexMul(Hi, dft(processedImage))
+    const gi = dft(Gi)
 
-    const normalizedGi = normalize(tf.real(gi))
+    gi[0].print()
+    gi[1].print()
+
+    const [giReal] = gi
+    const normalizedGi = normalize(giReal)
 
     tf.browser.toPixels(normalizedGi, this.debug)
 
@@ -408,24 +264,14 @@ class ObjectTracker {
 
     const fi = preprocessImage(newImageCrop)
 
-    // fi = greyscaleImage[clip_pos[1]:clip_pos[3], clip_pos[0]:clip_pos[2]]
-    // fi = pre_process(cv2.resize(fi, (init_gt[2], init_gt[3])))
-
-    // this.Ai =
-    //   LEARNING_RATE * (this.gaussFourier * np.conjugate(np.fft.fft2(fi))) +
-    //   (1 - LEARNING_RATE) * this.Ai
-    // this.Bi =
-    //   LEARNING_RATE * (np.fft.fft2(fi) * np.conjugate(np.fft.fft2(fi))) +
-    //   (1 - LEARNING_RATE) * this.Bi
-
-    const fiFf2 = fft2(fi)
+    const fiFf2 = dft(fi)
     const aPart1 = complexMul(
       complexMul(this.gaussFourier, conjugate(fiFf2)),
       LEARNING_RATE
     )
     const aPart2 = complexMul(this.Ai, 1 - LEARNING_RATE)
 
-    this.Ai = aPart1.addStrict(aPart2)
+    this.Ai = [aPart1[0].addStrict(aPart2[0]), aPart1[1].addStrict(aPart2[1])]
 
     const bPart1 = complexMul(
       complexMul(fiFf2, conjugate(fiFf2)),
@@ -433,7 +279,7 @@ class ObjectTracker {
     )
     const bPart2 = complexMul(this.Bi, 1 - LEARNING_RATE)
 
-    this.Bi = bPart1.addStrict(bPart2)
+    this.Bi = [bPart1[0].addStrict(bPart2[0]), bPart1[1].addStrict(bPart2[1])]
 
     return this.rect
   }
