@@ -33,41 +33,37 @@ const dft = a =>
   tf.tidy(() => {
     const [height, width] = isComplex(a) ? a[0].shape : a.shape
 
-    const xyw = tf
-      .range(0, width, 1)
-      .mul(tf.reshape(tf.range(0, width, 1), [-1, 1]))
+    const widthNumberLine = tf.range(0, width, 1)
+    const xyw = widthNumberLine.mul(tf.reshape(widthNumberLine, [-1, 1]))
 
-    const xyh = tf
-      .range(0, height, 1)
-      .mul(tf.reshape(tf.range(0, height, 1), [-1, 1]))
+    const heightNumberLine = tf.range(0, height, 1)
+    const xyh = heightNumberLine.mul(tf.reshape(heightNumberLine, [-1, 1]))
 
     // using euler's formula e^(-2 * pi * i / N) =>
     // real:  cos(2 * pi / N)
     // imag: -sin(2 * pi / N)
 
-    const realWW = tf.scalar(Math.cos((2 * Math.PI) / width))
-    const imagWW = tf.scalar(-Math.sin((2 * Math.PI) / width))
+    const realWW = Math.cos((2 * Math.PI) / width)
+    const imagWW = -Math.sin((2 * Math.PI) / width)
 
-    const realWH = tf.scalar(Math.cos((2 * Math.PI) / height))
-    const imagWH = tf.scalar(-Math.sin((2 * Math.PI) / height))
+    const realWH = Math.cos((2 * Math.PI) / height)
+    const imagWH = -Math.sin((2 * Math.PI) / height)
 
     // (r + i)^N =>
-    // real: (r^2 + i^2)^N * cos(N * i / r)
-    // imag: (r^2 + i^2)^N * sin(N * i / r)
+    // real: (r^2 + i^2)^N * cos(N * atan(i / r))
+    // imag: (r^2 + i^2)^N * sin(N * atan(i / r))
 
-    const twr = tf
-      .pow(tf.pow(realWW, 2).add(tf.pow(imagWW, 2)), xyw)
-      .mul(tf.cos(tf.atan(imagWW.div(realWW)).mul(xyw)))
-    const twi = tf
-      .pow(tf.pow(realWW, 2).add(tf.pow(imagWW, 2)), xyw)
-      .mul(tf.sin(tf.atan(imagWW.div(realWW)).mul(xyw)))
+    const pow1 = tf.pow(tf.square(realWW).add(tf.square(imagWW)), xyw)
+    const inner1 = tf.atan(tf.div(imagWW, realWW)).mul(xyw)
 
-    const thr = tf
-      .pow(tf.pow(realWH, 2).add(tf.pow(imagWH, 2)), xyh)
-      .mul(tf.cos(tf.atan(imagWH.div(realWH)).mul(xyh)))
-    const thi = tf
-      .pow(tf.pow(realWH, 2).add(tf.pow(imagWH, 2)), xyh)
-      .mul(tf.sin(tf.atan(imagWH.div(realWH)).mul(xyh)))
+    const twr = pow1.mul(tf.cos(inner1))
+    const twi = pow1.mul(tf.sin(inner1))
+
+    const pow2 = tf.pow(tf.square(realWH).add(tf.square(imagWH)), xyh)
+    const inner2 = tf.atan(tf.div(imagWH, realWH)).mul(xyh)
+
+    const thr = pow2.mul(tf.cos(inner2))
+    const thi = pow2.mul(tf.sin(inner2))
 
     // num * complex == num * real + num * imag)
     const gt = (() => {
@@ -88,10 +84,10 @@ const dft = a =>
 
     // complex * complex == real * real + real * imag + imag * real + imag * imag)
     const [gtr, gti] = gt
-    const r1r2 = tf.transpose(tf.matMul(tf.transpose(gtr), thr))
-    const r1i2 = tf.transpose(tf.matMul(tf.transpose(gtr), thi))
-    const i1r2 = tf.transpose(tf.matMul(tf.transpose(gti), thr))
-    const i1i2 = tf.transpose(tf.matMul(tf.transpose(gti), thi))
+    const r1r2 = tf.transpose(tf.matMul(gtr, thr, true))
+    const r1i2 = tf.transpose(tf.matMul(gtr, thi, true))
+    const i1r2 = tf.transpose(tf.matMul(gti, thr, true))
+    const i1i2 = tf.transpose(tf.matMul(gti, thi, true))
 
     const real = r1r2.sub(i1i2)
     const imag = r1i2.add(i1r2)
@@ -99,7 +95,7 @@ const dft = a =>
     return [real, imag]
   })
 
-const conjugate = ([real, imag]) => tf.tidy(() => [real, imag.mul(-1)]) // broadcast scalar
+const conjugate = ([real, imag]) => tf.tidy(() => [real, imag.neg()]) // broadcast scalar
 
 const hanning = M =>
   tf.tidy(() => {
@@ -213,10 +209,33 @@ class ObjectTracker {
     const imageCrop = greyscaleImage.slice([ymin, xmin], [height, width])
     const processedImage = preprocessImage(imageCrop)
 
+    // // DEBUG //
+    // const fakeResponse = tf.tensor2d([
+    //   [0, 0, 0, 0, 0, 0],
+    //   [0, 0, 0, 0, 0, 0],
+    //   [0, 0, 1, 1, 0, 0],
+    //   [0, 0, 1, 1, 0, 0],
+    //   [0, 0, 1, 1, 0, 0],
+    //   [0, 0, 0, 0, 0, 0],
+    //   [0, 0, 0, 0, 0, 0],
+    //   [0, 0, 0, 0, 0, 0],
+    //   [0, 0, 0, 0, 0, 0],
+    //   [0, 0, 0, 0, 0, 0],
+    //   [0, 0, 0, 0, 0, 0]
+    // ])
+
+    // const G1 = dft(fakeResponse)
+    // G1[0].print()
+    // G1[1].print()
+    // const G2 = dft(G1)
+    // G2[0].print()
+    // G2[1].print()
+    // DEBUG //
+
+    // tf.browser.toPixels(fakeResponse, this.debug)
+
     this.gaussFourier = dft(gaussCrop)
     const processedImageFourier = dft(processedImage)
-    // processedImageFourier[0].print()
-    // processedImageFourier[1].print()
 
     this.Ai = complexMul(this.gaussFourier, conjugate(processedImageFourier))
     this.Bi = complexMul(dft(imageCrop), conjugate(dft(imageCrop)))
@@ -251,24 +270,28 @@ class ObjectTracker {
     const positionsTransposed = tf.tensor2d(positions).transpose()
 
     const dy = tf
-      .mean(positionsTransposed.slice(0))
+      .mean(positionsTransposed.slice(0, 1))
       .sub(normalizedGi.shape[0] / 2)
+      .round()
       .dataSync()[0]
     const dx = tf
       .mean(positionsTransposed.slice(1))
       .sub(normalizedGi.shape[1] / 2)
+      .round()
       .dataSync()[0]
 
     console.log(dx)
     console.log(dy)
 
     // TODO: we need to clip this to bounds.
-    this.rect = [Math.round(xmin + dx), Math.round(ymin + dy), width, height]
+    this.rect = [Math.round(xmin - dx), Math.round(ymin - dy), width, height]
 
     const newImageCrop = greyscaleImage.slice(
       [this.rect[1], this.rect[0]],
       [this.rect[3], this.rect[2]]
     )
+
+    tf.browser.toPixels(newImageCrop.div(255), this.debug)
 
     const fi = preprocessImage(newImageCrop)
 
