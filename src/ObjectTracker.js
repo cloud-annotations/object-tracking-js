@@ -8,127 +8,131 @@ const LEARNING_RATE = 0.125
 
 const isComplex = x => !x.dtype && x.length === 2
 
-const rgbToGrayscale = image => {
-  // Reference for converting between RGB and grayscale.
-  // https://en.wikipedia.org/wiki/Luma_%28video%29
-  const rgbWeights = tf.tensor1d([0.2989, 0.587, 0.114])
-  return tf.sum(image.mul(rgbWeights), 2) // broadcast across the image.
-}
+const rgbToGrayscale = image =>
+  tf.tidy(() => {
+    // Reference for converting between RGB and grayscale.
+    // https://en.wikipedia.org/wiki/Luma_%28video%29
+    const rgbWeights = tf.tensor1d([0.2989, 0.587, 0.114])
+    return tf.sum(image.mul(rgbWeights), 2) // broadcast across the image.
+  })
 
-const gauss = (width, height, sigma, center) => {
-  const gaussBuffer = tf.zeros([height, width]).bufferSync()
+const gauss = ([height, width], [centerY, centerX], sigma) =>
+  tf.tidy(() => {
+    const x = tf.range(0, width, 1)
+    const y = tf.reshape(tf.range(0, height, 1), [-1, 1])
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const a = 1 / (2 * sigma)
-      const fin = Math.exp(
-        -(a * Math.pow(x - center[1], 2) + a * Math.pow(y - center[0], 2))
-      )
-      gaussBuffer.set(fin, y, x)
-    }
-  }
+    const dist = tf
+      .square(x.sub(centerX))
+      .add(tf.square(y.sub(centerY)))
+      .div(-2 * sigma)
 
-  return gaussBuffer.toTensor()
-}
+    return tf.exp(dist)
+  })
 
-const dft = a => {
-  const [height, width] = isComplex(a) ? a[0].shape : a.shape
+const dft = a =>
+  tf.tidy(() => {
+    const [height, width] = isComplex(a) ? a[0].shape : a.shape
 
-  const xyw = tf
-    .range(0, width, 1)
-    .mul(tf.reshape(tf.range(0, width, 1), [-1, 1]))
+    const xyw = tf
+      .range(0, width, 1)
+      .mul(tf.reshape(tf.range(0, width, 1), [-1, 1]))
 
-  const xyh = tf
-    .range(0, height, 1)
-    .mul(tf.reshape(tf.range(0, height, 1), [-1, 1]))
+    const xyh = tf
+      .range(0, height, 1)
+      .mul(tf.reshape(tf.range(0, height, 1), [-1, 1]))
 
-  // using euler's formula e^(-2 * pi * i / N) =>
-  // real:  cos(2 * pi / N)
-  // imag: -sin(2 * pi / N)
+    // using euler's formula e^(-2 * pi * i / N) =>
+    // real:  cos(2 * pi / N)
+    // imag: -sin(2 * pi / N)
 
-  const realWW = tf.scalar(Math.cos((2 * Math.PI) / width))
-  const imagWW = tf.scalar(-Math.sin((2 * Math.PI) / width))
+    const realWW = tf.scalar(Math.cos((2 * Math.PI) / width))
+    const imagWW = tf.scalar(-Math.sin((2 * Math.PI) / width))
 
-  const realWH = tf.scalar(Math.cos((2 * Math.PI) / height))
-  const imagWH = tf.scalar(-Math.sin((2 * Math.PI) / height))
+    const realWH = tf.scalar(Math.cos((2 * Math.PI) / height))
+    const imagWH = tf.scalar(-Math.sin((2 * Math.PI) / height))
 
-  // (r + i)^N =>
-  // real: (r^2 + i^2)^N * cos(N * i / r)
-  // imag: (r^2 + i^2)^N * sin(N * i / r)
+    // (r + i)^N =>
+    // real: (r^2 + i^2)^N * cos(N * i / r)
+    // imag: (r^2 + i^2)^N * sin(N * i / r)
 
-  const twr = tf
-    .pow(tf.pow(realWW, 2).add(tf.pow(imagWW, 2)), xyw)
-    .mul(tf.cos(tf.atan(imagWW.div(realWW)).mul(xyw)))
-  const twi = tf
-    .pow(tf.pow(realWW, 2).add(tf.pow(imagWW, 2)), xyw)
-    .mul(tf.sin(tf.atan(imagWW.div(realWW)).mul(xyw)))
+    const twr = tf
+      .pow(tf.pow(realWW, 2).add(tf.pow(imagWW, 2)), xyw)
+      .mul(tf.cos(tf.atan(imagWW.div(realWW)).mul(xyw)))
+    const twi = tf
+      .pow(tf.pow(realWW, 2).add(tf.pow(imagWW, 2)), xyw)
+      .mul(tf.sin(tf.atan(imagWW.div(realWW)).mul(xyw)))
 
-  const thr = tf
-    .pow(tf.pow(realWH, 2).add(tf.pow(imagWH, 2)), xyh)
-    .mul(tf.cos(tf.atan(imagWH.div(realWH)).mul(xyh)))
-  const thi = tf
-    .pow(tf.pow(realWH, 2).add(tf.pow(imagWH, 2)), xyh)
-    .mul(tf.sin(tf.atan(imagWH.div(realWH)).mul(xyh)))
+    const thr = tf
+      .pow(tf.pow(realWH, 2).add(tf.pow(imagWH, 2)), xyh)
+      .mul(tf.cos(tf.atan(imagWH.div(realWH)).mul(xyh)))
+    const thi = tf
+      .pow(tf.pow(realWH, 2).add(tf.pow(imagWH, 2)), xyh)
+      .mul(tf.sin(tf.atan(imagWH.div(realWH)).mul(xyh)))
 
-  // num * complex == num * real + num * imag)
-  const gt = (() => {
-    if (isComplex(a)) {
-      const [aReal, aImag] = a
-      const r1r2 = tf.matMul(aReal, twr)
-      const r1i2 = tf.matMul(aReal, twi)
-      const i1r2 = tf.matMul(aImag, twr)
-      const i1i2 = tf.matMul(aImag, twi)
+    // num * complex == num * real + num * imag)
+    const gt = (() => {
+      if (isComplex(a)) {
+        const [aReal, aImag] = a
+        const r1r2 = tf.matMul(aReal, twr)
+        const r1i2 = tf.matMul(aReal, twi)
+        const i1r2 = tf.matMul(aImag, twr)
+        const i1i2 = tf.matMul(aImag, twi)
 
-      const real = r1r2.sub(i1i2)
-      const imag = r1i2.add(i1r2)
+        const real = r1r2.sub(i1i2)
+        const imag = r1i2.add(i1r2)
 
-      return [real, imag]
-    }
-    return [tf.matMul(a, twr), tf.matMul(a, twi)]
-  })()
+        return [real, imag]
+      }
+      return [tf.matMul(a, twr), tf.matMul(a, twi)]
+    })()
 
-  // complex * complex == real * real + real * imag + imag * real + imag * imag)
-  const [gtr, gti] = gt
-  const r1r2 = tf.transpose(tf.matMul(tf.transpose(gtr), thr))
-  const r1i2 = tf.transpose(tf.matMul(tf.transpose(gtr), thi))
-  const i1r2 = tf.transpose(tf.matMul(tf.transpose(gti), thr))
-  const i1i2 = tf.transpose(tf.matMul(tf.transpose(gti), thi))
+    // complex * complex == real * real + real * imag + imag * real + imag * imag)
+    const [gtr, gti] = gt
+    const r1r2 = tf.transpose(tf.matMul(tf.transpose(gtr), thr))
+    const r1i2 = tf.transpose(tf.matMul(tf.transpose(gtr), thi))
+    const i1r2 = tf.transpose(tf.matMul(tf.transpose(gti), thr))
+    const i1i2 = tf.transpose(tf.matMul(tf.transpose(gti), thi))
 
-  const real = r1r2.sub(i1i2)
-  const imag = r1i2.add(i1r2)
+    const real = r1r2.sub(i1i2)
+    const imag = r1i2.add(i1r2)
 
-  return [real, imag]
-}
+    return [real, imag]
+  })
 
-const conjugate = ([real, imag]) => [real, imag.mul(-1)] // broadcast scalar
+const conjugate = ([real, imag]) => tf.tidy(() => [real, imag.mul(-1)]) // broadcast scalar
 
-const hanning = M => {
-  const numberLine = tf.linspace(0, M - 1, M)
-  const intermediate = tf.cos(numberLine.mul(2 * Math.PI).div(M - 1)) // multiplying by a scalar
-  return tf.scalar(0.5).sub(intermediate.mul(0.5)) // multiplying by a scalar
-}
+const hanning = M =>
+  tf.tidy(() => {
+    const numberLine = tf.linspace(0, M - 1, M)
+    const intermediate = tf.cos(numberLine.mul(2 * Math.PI).div(M - 1)) // multiplying by a scalar
+    return tf.scalar(0.5).sub(intermediate.mul(0.5)) // multiplying by a scalar
+  })
 
-const hanningWindow = (width, height) => {
-  const col = hanning(width)
-  const row = hanning(height).reshape([-1, 1])
-  return col.mul(row) // broadcast
-}
+const hanningWindow = (width, height) =>
+  tf.tidy(() => {
+    const col = hanning(width)
+    const row = hanning(height).reshape([-1, 1])
+    return col.mul(row) // broadcast
+  })
 
-const preprocessImage = image => {
-  const [height, width] = image.shape
-  const logOfImage = tf.log1p(image) // log(image + 1)
-  const stdOfImage = tf.moments(logOfImage).variance.sqrt()
-  const normalizedImage = logOfImage
-    .sub(tf.mean(logOfImage))
-    .div(stdOfImage.add(EPSILON))
+const preprocessImage = image =>
+  tf.tidy(() => {
+    const [height, width] = image.shape
+    const logOfImage = tf.log1p(image) // log(image + 1)
+    const stdOfImage = tf.moments(logOfImage).variance.sqrt()
+    const normalizedImage = logOfImage
+      .sub(tf.mean(logOfImage))
+      .div(stdOfImage.add(EPSILON))
 
-  const window = hanningWindow(width, height)
+    const window = hanningWindow(width, height)
 
-  return normalizedImage.mulStrict(window)
-}
+    return normalizedImage.mulStrict(window)
+  })
 
 const normalize = tensor =>
-  tensor.sub(tf.min(tensor)).div(tf.max(tensor).sub(tf.min(tensor)))
+  tf.tidy(() =>
+    tensor.sub(tf.min(tensor)).div(tf.max(tensor).sub(tf.min(tensor)))
+  )
 
 const findIndex2d = (matrix, val) => {
   return matrix.reduce((acc, row, y) => {
@@ -141,55 +145,57 @@ const findIndex2d = (matrix, val) => {
   }, [])
 }
 
-const complexMul = (a, b) => {
-  // CASES:
-  // complex * complex
-  if (isComplex(a) && isComplex(b)) {
-    const [aReal, aImag] = a
-    const [bReal, bImag] = b
-    const r1r2 = aReal.mulStrict(bReal)
-    const r1i2 = aReal.mulStrict(bImag)
-    const i1r2 = aImag.mulStrict(bReal)
-    const i1i2 = aImag.mulStrict(bImag)
+const complexMul = (a, b) =>
+  tf.tidy(() => {
+    // CASES:
+    // complex * complex
+    if (isComplex(a) && isComplex(b)) {
+      const [aReal, aImag] = a
+      const [bReal, bImag] = b
+      const r1r2 = aReal.mulStrict(bReal)
+      const r1i2 = aReal.mulStrict(bImag)
+      const i1r2 = aImag.mulStrict(bReal)
+      const i1i2 = aImag.mulStrict(bImag)
 
-    const real = r1r2.sub(i1i2)
-    const imag = r1i2.add(i1r2)
+      const real = r1r2.sub(i1i2)
+      const imag = r1i2.add(i1r2)
+      return [real, imag]
+    }
+
+    // complex * tensor
+    // complex * scalar
+    if (isComplex(a)) {
+      const [aReal, aImag] = a
+      return [aReal.mul(b), aImag.mul(b)] // allow broadcast
+    }
+
+    // tensor * complex
+    // scalar * complex
+    if (isComplex(b)) {
+      const [bReal, bImag] = b
+      return [bReal.mul(a), bImag.mul(a)] // allow broadcast
+    }
+
+    // tensor * tensor
+    // tensor * scalar
+    // scalar * tensor
+    // scalar * scalar
+    return tf.mul(a, b) // allow broadcast
+  })
+
+const complexDiv = ([aReal, aImag], [bReal, bImag]) =>
+  tf.tidy(() => {
+    const denom = bImag.mulStrict(bImag).add(bReal.mulStrict(bReal))
+    const real = aReal
+      .mulStrict(bReal)
+      .add(aImag.mulStrict(bImag))
+      .div(denom)
+    const imag = bReal
+      .mulStrict(aImag)
+      .sub(aReal.mulStrict(bImag))
+      .div(denom)
     return [real, imag]
-  }
-
-  // complex * tensor
-  // complex * scalar
-  if (isComplex(a)) {
-    const [aReal, aImag] = a
-    return [aReal.mul(b), aImag.mul(b)] // allow broadcast
-  }
-
-  // tensor * complex
-  // scalar * complex
-  if (isComplex(b)) {
-    const [bReal, bImag] = b
-    return [bReal.mul(a), bImag.mul(a)] // allow broadcast
-  }
-
-  // tensor * tensor
-  // tensor * scalar
-  // scalar * tensor
-  // scalar * scalar
-  return tf.mul(a, b) // allow broadcast
-}
-
-const complexDiv = ([aReal, aImag], [bReal, bImag]) => {
-  const denom = bImag.mulStrict(bImag).add(bReal.mulStrict(bReal))
-  const real = aReal
-    .mulStrict(bReal)
-    .add(aImag.mulStrict(bImag))
-    .div(denom)
-  const imag = bReal
-    .mulStrict(aImag)
-    .sub(aReal.mulStrict(bImag))
-    .div(denom)
-  return [real, imag]
-}
+  })
 
 class ObjectTracker {
   constructor(frame, [xmin, ymin, width, height], debug) {
@@ -200,7 +206,7 @@ class ObjectTracker {
     const greyscaleImage = rgbToGrayscale(image)
 
     const center = [ymin + height / 2, xmin + width / 2]
-    const gaussTensor = gauss(frame.width, frame.height, SIGMA, center)
+    const gaussTensor = gauss([frame.height, frame.width], center, SIGMA)
 
     const gaussCrop = gaussTensor.slice([ymin, xmin], [height, width])
 
@@ -209,6 +215,8 @@ class ObjectTracker {
 
     this.gaussFourier = dft(gaussCrop)
     const processedImageFourier = dft(processedImage)
+    // processedImageFourier[0].print()
+    // processedImageFourier[1].print()
 
     this.Ai = complexMul(this.gaussFourier, conjugate(processedImageFourier))
     this.Bi = complexMul(dft(imageCrop), conjugate(dft(imageCrop)))
@@ -230,13 +238,13 @@ class ObjectTracker {
     const Gi = complexMul(Hi, dft(processedImage))
     const gi = dft(Gi)
 
-    gi[0].print()
-    gi[1].print()
+    // gi[0].print()
+    // gi[1].print()
 
     const [giReal] = gi
     const normalizedGi = normalize(giReal)
 
-    tf.browser.toPixels(normalizedGi, this.debug)
+    // tf.browser.toPixels(normalizedGi, this.debug)
 
     const maxValue = tf.max(normalizedGi).dataSync()[0]
     const positions = findIndex2d(normalizedGi.arraySync(), maxValue)
