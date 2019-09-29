@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom'
-import ObjectTracker from './ObjectTracker'
+import objectTracker from './object-tracking'
 
 const ImageWithCanvas = ({ src, tracker }) => {
   const canvasRef = useRef()
@@ -15,7 +15,7 @@ const ImageWithCanvas = ({ src, tracker }) => {
 
       ctx.drawImage(e.target, 0, 0)
 
-      const box = tracker.next(e.target)
+      const box = tracker.track(e.target)
 
       ctx.rect(box[0], box[1], box[2], box[3])
       ctx.stroke()
@@ -56,11 +56,7 @@ const App = () => {
         const ymin = 137
         const width = 84
         const height = 145
-        const tracker = new ObjectTracker(
-          image,
-          [xmin, ymin, width, height],
-          debugCanvas.current
-        )
+        const tracker = objectTracker.init(image, [xmin, ymin, width, height])
         setTracker(tracker)
       }
       image.src = videos[0]
