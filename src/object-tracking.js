@@ -78,14 +78,9 @@ export default {
             .round()
             .dataSync()[0]
 
-          // TODO: This will actually break things because we always expect same
-          // width and height.
-          // Maybe user sees the clipped box, but the actual x/y/width/height
-          // would be different.
-          // actual:   [________XXX]XXX
-          // return:   [________XXX]
-          // internal: [_____XXXXXX]
-          // For now we will just use internal for all
+          // Clipping:
+          // raw:     [________XXX]XXX
+          // clipped: [_____XXXXXX]
           const newRect = [
             clamp(xmin - dx, 0, frame.width - width),
             clamp(ymin - dy, 0, frame.height - height),
