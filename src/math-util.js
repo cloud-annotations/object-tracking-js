@@ -1,4 +1,5 @@
 import * as tf from '@tensorflow/tfjs'
+tf.enableProdMode()
 
 // NOTE: Don't use tf.complex, it's kinda buggy as of tfjs@1.2.9
 

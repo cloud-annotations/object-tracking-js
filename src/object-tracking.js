@@ -1,5 +1,6 @@
 import * as tf from '@tensorflow/tfjs'
 import * as np from './math-util'
+tf.enableProdMode()
 
 const SIGMA = 100
 const LEARNING_RATE = 0.125
@@ -17,7 +18,7 @@ export default {
 
       // Create gaussian blur centered at the region of interest.
       const center = [ymin + height / 2, xmin + width / 2]
-      const gaussTensor = np.gauss([frame.height, frame.width], center, SIGMA)
+      const gaussTensor = np.gauss(image.shape, center, SIGMA)
       const gaussCrop = gaussTensor.slice([ymin, xmin], [height, width])
 
       // The rectangle is always the same size so we can just calculate the
@@ -78,8 +79,8 @@ export default {
           // raw:     [________XXX]XXX
           // clipped: [_____XXXXXX]
           const newRect = [
-            clamp(xmin - dx, 0, frame.width - width),
-            clamp(ymin - dy, 0, frame.height - height),
+            clamp(xmin - dx, 0, image.shape[1] - width),
+            clamp(ymin - dy, 0, image.shape[0] - height),
             width,
             height
           ]
