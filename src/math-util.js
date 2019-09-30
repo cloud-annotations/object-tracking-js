@@ -27,10 +27,8 @@ export const gauss = ([height, width], [centerY, centerX], sigma) =>
     return tf.exp(dist)
   })
 
-export const dft = a =>
+export const calculateFourierMatrix = ([height, width]) =>
   tf.tidy(() => {
-    const [height, width] = isComplex(a) ? a[0].shape : a.shape
-
     const widthNumberLine = tf.range(0, width, 1)
     const xyw = widthNumberLine.mul(tf.reshape(widthNumberLine, [-1, 1]))
 
@@ -62,6 +60,22 @@ export const dft = a =>
 
     const thr = pow2.mul(tf.cos(inner2))
     const thi = pow2.mul(tf.sin(inner2))
+
+    return [[twr, twi], [thr, thi]]
+  })
+
+export const dft = (a, t) =>
+  tf.tidy(() => {
+    let twr
+    let twi
+    let thr
+    let thi
+    if (!t) {
+      const shape = isComplex(a) ? a[0].shape : a.shape
+      ;[[twr, twi], [thr, thi]] = calculateFourierMatrix(shape)
+    } else {
+      ;[[twr, twi], [thr, thi]] = t
+    }
 
     // num * complex == num * real + num * imag)
     const gt = (() => {

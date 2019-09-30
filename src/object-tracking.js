@@ -6,31 +6,37 @@ const LEARNING_RATE = 0.125
 
 export default {
   init: (frame, [xmin, ymin, width, height]) => {
-    const [_rect, _Ai, _Bi, gaussFourier] = tf.tidy(() => {
-      const rect = [xmin, ymin, width, height]
-
+    const [_rect, _Ai, _Bi, gaussFourier, fourierMatrix] = tf.tidy(() => {
+      // Process image.
       const image = tf.browser.fromPixels(frame)
-
       const greyscaleImage = np.rgbToGrayscale(image)
-
-      const center = [ymin + height / 2, xmin + width / 2]
-      const gaussTensor = np.gauss([frame.height, frame.width], center, SIGMA)
-
-      const gaussCrop = gaussTensor.slice([ymin, xmin], [height, width])
-
       const imageCrop = greyscaleImage.slice([ymin, xmin], [height, width])
       const processedImage = np.preprocessImage(imageCrop)
 
-      const gaussFourier = np.dft(gaussCrop)
-      const processedImageFourier = np.dft(processedImage)
+      // Create gaussian blur centered at the region of interest.
+      const center = [ymin + height / 2, xmin + width / 2]
+      const gaussTensor = np.gauss([frame.height, frame.width], center, SIGMA)
+      const gaussCrop = gaussTensor.slice([ymin, xmin], [height, width])
 
-      let Ai = np.complexMul(gaussFourier, np.conjugate(processedImageFourier))
-      let Bi = np.complexMul(np.dft(imageCrop), np.conjugate(np.dft(imageCrop)))
+      // The rectangle is always the same size so we can just calculate the
+      // fourier matrix once.
+      const fourierMatrix = np.calculateFourierMatrix([height, width])
 
-      Ai = np.complexMul(Ai, LEARNING_RATE)
-      Bi = np.complexMul(Bi, LEARNING_RATE)
+      // Calculate Ai and Bi.
+      const gaussFourier = np.dft(gaussCrop, fourierMatrix)
+      const imageFourier = np.dft(imageCrop, fourierMatrix)
+      const processedImageFourier = np.dft(processedImage, fourierMatrix)
 
-      return [rect, Ai, Bi, gaussFourier]
+      const Ai = np.complexMul(
+        np.complexMul(gaussFourier, np.conjugate(processedImageFourier)),
+        LEARNING_RATE
+      )
+      const Bi = np.complexMul(
+        np.complexMul(imageFourier, np.conjugate(imageFourier)),
+        LEARNING_RATE
+      )
+
+      return [[xmin, ymin, width, height], Ai, Bi, gaussFourier, fourierMatrix]
     })
 
     let rect = _rect
@@ -39,22 +45,22 @@ export default {
 
     return {
       next: frame => {
-        const [newRect, newAi, newBi, _keepGauss] = tf.tidy(() => {
+        const [newRect, newAi, newBi] = tf.tidy(() => {
           const [xmin, ymin, width, height] = rect
 
+          // Process image.
           const image = tf.browser.fromPixels(frame)
           const greyscaleImage = np.rgbToGrayscale(image)
           const imageCrop = greyscaleImage.slice([ymin, xmin], [height, width])
-
           const processedImage = np.preprocessImage(imageCrop)
 
+          // Calculate dx/dy
           const Hi = np.complexDiv(Ai, Bi)
 
-          const Gi = np.complexMul(Hi, np.dft(processedImage))
-          const gi = np.dft(Gi)
+          const Gi = np.complexMul(Hi, np.dft(processedImage, fourierMatrix))
+          const gi = np.dft(Gi, fourierMatrix)
 
-          const [giReal] = gi
-          const normalizedGi = np.normalize(giReal)
+          const normalizedGi = np.normalize(gi[0])
 
           const maxValue = tf.max(normalizedGi).dataSync()[0]
           const positions = np.findIndex2d(normalizedGi.arraySync(), maxValue)
@@ -79,6 +85,7 @@ export default {
             height
           ]
 
+          // Train on new image.
           const newImageCrop = greyscaleImage.slice(
             [newRect[1], newRect[0]],
             [newRect[3], newRect[2]]
@@ -86,7 +93,7 @@ export default {
 
           const fi = np.preprocessImage(newImageCrop)
 
-          const fiFf2 = np.dft(fi)
+          const fiFf2 = np.dft(fi, fourierMatrix)
           const aPart1 = np.complexMul(
             np.complexMul(gaussFourier, np.conjugate(fiFf2)),
             LEARNING_RATE
@@ -114,7 +121,7 @@ export default {
           Bi[0].dispose()
           Bi[1].dispose()
 
-          return [newRect, newAi, newBi, gaussFourier]
+          return [newRect, newAi, newBi, gaussFourier, fourierMatrix] // keep in tensors in memory.
         })
 
         rect = newRect
