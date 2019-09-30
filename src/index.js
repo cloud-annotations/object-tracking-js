@@ -46,6 +46,7 @@ const App = () => {
       videoRef.current.play()
       trackAndRender(tracker)
     }
+
     videoRef.current.currentTime = 0
   }, [renderBox, trackAndRender])
 
@@ -54,6 +55,7 @@ const App = () => {
       <video
         ref={videoRef}
         src="/video/test.mp4"
+        muted
         onLoadedData={handleVideoLoad}
       />
       <canvas
