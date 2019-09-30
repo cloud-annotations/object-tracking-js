@@ -42,8 +42,6 @@ const App = () => {
   const [tracker, setTracker] = useState()
   const [currentIndex, setCurrentIndex] = useState(0)
 
-  const debugCanvas = useRef()
-
   const videos = [...new Array(376)].map(
     (_, i) => `/video/${(i + 1).toString().padStart(4, '0')}.jpg`
   )
@@ -76,10 +74,9 @@ const App = () => {
   }, [])
 
   return (
-    <div>
-      <canvas ref={debugCanvas}></canvas>
+    <>
       <ImageWithCanvas tracker={tracker} src={videos[currentIndex]} />
-    </div>
+    </>
   )
 }
 

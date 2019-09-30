@@ -4,6 +4,8 @@ import * as np from './math-util'
 const SIGMA = 100
 const LEARNING_RATE = 0.125
 
+const clamp = (x, lower, upper) => Math.max(lower, Math.min(x, upper))
+
 export default {
   init: (frame, [xmin, ymin, width, height]) => {
     const [_rect, _Ai, _Bi, gaussFourier, fourierMatrix] = tf.tidy(() => {
@@ -76,12 +78,20 @@ export default {
             .round()
             .dataSync()[0]
 
-          // TODO: we need to clip this to bounds.
+          // TODO: This will actually break things because we always expect same
+          // width and height.
+          // Maybe user sees the clipped box, but the actual x/y/width/height
+          // would be different.
+          // actual:   [________XXX]XXX
+          // return:   [________XXX]
+          // internal: [_____XXXXXX]
+          const newXmin = clamp(xmin - dx, 0, frame.width)
+          const newYmin = clamp(ymin - dy, 0, frame.height)
           const newRect = [
-            Math.round(xmin - dx),
-            Math.round(ymin - dy),
-            width,
-            height
+            newXmin,
+            newYmin,
+            Math.min(width, frame.width - newXmin),
+            Math.min(height, frame.height - newYmin)
           ]
 
           // Train on new image.

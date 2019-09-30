@@ -142,6 +142,7 @@ export const normalize = tensor =>
     tensor.sub(tf.min(tensor)).div(tf.max(tensor).sub(tf.min(tensor)))
   )
 
+// TODO: Make async.
 export const findIndex2d = (matrix, val) => {
   const syncedMatrix = matrix.arraySync()
   const syncedVal = val.dataSync()[0]
