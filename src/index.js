@@ -6,7 +6,7 @@ const ImageWithCanvas = ({ src, tracker }) => {
   const canvasRef = useRef()
 
   const handleLoad = useCallback(
-    e => {
+    async e => {
       canvasRef.current.width = e.target.width
       canvasRef.current.height = e.target.height
       const ctx = canvasRef.current.getContext('2d')
@@ -15,7 +15,7 @@ const ImageWithCanvas = ({ src, tracker }) => {
 
       ctx.drawImage(e.target, 0, 0)
 
-      const box = tracker.next(e.target)
+      const box = await tracker.next(e.target)
 
       ctx.rect(box[0], box[1], box[2], box[3])
       ctx.stroke()

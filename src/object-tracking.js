@@ -44,7 +44,7 @@ export default {
     let Bi = _Bi
 
     return {
-      next: frame => {
+      next: async frame => {
         const [newRect, newAi, newBi] = tf.tidy(() => {
           const [xmin, ymin, width, height] = rect
 
@@ -62,17 +62,16 @@ export default {
 
           const normalizedGi = np.normalize(gi[0])
 
-          const maxValue = tf.max(normalizedGi).dataSync()[0]
-          const positions = np.findIndex2d(normalizedGi.arraySync(), maxValue)
-          const positionsTransposed = tf.tensor2d(positions).transpose()
+          const maxValue = tf.max(normalizedGi)
+          const positions = np.findIndex2d(normalizedGi, maxValue)
 
           const dy = tf
-            .mean(positionsTransposed.slice(0, 1))
+            .mean(positions.slice(0, 1))
             .sub(normalizedGi.shape[0] / 2)
             .round()
             .dataSync()[0]
           const dx = tf
-            .mean(positionsTransposed.slice(1))
+            .mean(positions.slice(1))
             .sub(normalizedGi.shape[1] / 2)
             .round()
             .dataSync()[0]

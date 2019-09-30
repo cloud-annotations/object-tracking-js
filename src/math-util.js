@@ -111,28 +111,28 @@ export const conjugate = ([real, imag]) => tf.tidy(() => [real, imag.neg()]) // 
 
 export const hanning = M =>
   tf.tidy(() => {
-    const numberLine = tf.linspace(0, M - 1, M)
+    const numberLine = tf.range(0, M, 1)
     const intermediate = tf.cos(numberLine.mul(2 * Math.PI).div(M - 1)) // multiplying by a scalar
     return tf.scalar(0.5).sub(intermediate.mul(0.5)) // multiplying by a scalar
   })
 
-export const hanningWindow = (width, height) =>
+export const hanningWindow = ([height, width]) =>
   tf.tidy(() => {
     const col = hanning(width)
     const row = hanning(height).reshape([-1, 1])
     return col.mul(row) // broadcast
   })
 
+// NOTE: We could probably cache the hanning window as well.
 export const preprocessImage = image =>
   tf.tidy(() => {
-    const [height, width] = image.shape
     const logOfImage = tf.log1p(image) // log(image + 1)
-    const stdOfImage = tf.moments(logOfImage).variance.sqrt()
+    const { mean, variance } = tf.moments(logOfImage)
     const normalizedImage = logOfImage
-      .sub(tf.mean(logOfImage))
-      .div(stdOfImage.add(EPSILON))
+      .sub(mean)
+      .div(tf.sqrt(variance).add(EPSILON))
 
-    const window = hanningWindow(width, height)
+    const window = hanningWindow(image.shape)
 
     return normalizedImage.mulStrict(window)
   })
@@ -143,14 +143,20 @@ export const normalize = tensor =>
   )
 
 export const findIndex2d = (matrix, val) => {
-  return matrix.reduce((acc, row, y) => {
-    row.forEach((item, x) => {
-      if (item === val) {
-        acc.push([y, x])
-      }
-    })
-    return acc
-  }, [])
+  const syncedMatrix = matrix.arraySync()
+  const syncedVal = val.dataSync()[0]
+  return tf
+    .tensor2d(
+      syncedMatrix.reduce((acc, row, y) => {
+        row.forEach((item, x) => {
+          if (item === syncedVal) {
+            acc.push([y, x])
+          }
+        })
+        return acc
+      }, [])
+    )
+    .transpose()
 }
 
 export const complexMul = (a, b) =>
