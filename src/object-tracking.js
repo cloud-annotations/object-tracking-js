@@ -67,16 +67,12 @@ export default {
           const maxValue = tf.max(normalizedGi)
           const positions = np.findIndex2d(normalizedGi, maxValue)
 
-          const dy = tf
-            .mean(positions.slice(0, 1))
-            .sub(normalizedGi.shape[0] / 2)
+          const delta = tf
+            .mean(positions, 1)
+            .sub([normalizedGi.shape[0] / 2, normalizedGi.shape[1] / 2])
             .round()
-            .dataSync()[0]
-          const dx = tf
-            .mean(positions.slice(1))
-            .sub(normalizedGi.shape[1] / 2)
-            .round()
-            .dataSync()[0]
+
+          const [dy, dx] = delta.dataSync()
 
           // Clipping:
           // raw:     [________XXX]XXX
