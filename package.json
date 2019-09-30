@@ -1,6 +1,6 @@
 {
   "name": "@cloud-annotations/object-tracking",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "Simple object tracking in js",
   "jsdelivr": "dist/object-tracking.min.js",
   "keywords": [
@@ -8,7 +8,7 @@
     "machine learning",
     "bounding boxes"
   ],
-  "main": "src/index.js",
+  "main": "dist/index.js",
   "repository": {
     "type": "git",
     "url": "https://github.com/cloud-annotations/object-tracking-js.git"
