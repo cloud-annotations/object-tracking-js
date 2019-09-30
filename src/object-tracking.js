@@ -85,13 +85,12 @@ export default {
           // actual:   [________XXX]XXX
           // return:   [________XXX]
           // internal: [_____XXXXXX]
-          const newXmin = clamp(xmin - dx, 0, frame.width)
-          const newYmin = clamp(ymin - dy, 0, frame.height)
+          // For now we will just use internal for all
           const newRect = [
-            newXmin,
-            newYmin,
-            Math.min(width, frame.width - newXmin),
-            Math.min(height, frame.height - newYmin)
+            clamp(xmin - dx, 0, frame.width - width),
+            clamp(ymin - dy, 0, frame.height - height),
+            width,
+            height
           ]
 
           // Train on new image.
