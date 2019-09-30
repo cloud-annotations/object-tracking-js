@@ -127,8 +127,7 @@ export default {
         rect = newRect
         Ai = newAi
         Bi = newBi
-
-        console.log(tf.memory().numTensors)
+        
         return rect
       }
     }

@@ -1,6 +1,8 @@
 import React, { useCallback, useRef } from 'react'
 import ReactDOM from 'react-dom'
-import objectTracker from './object-tracking'
+import objectTracker from '@cloud-annotations/object-tracking'
+
+const VIDEO = process.env.PUBLIC_URL + '/video/test.mp4'
 
 const App = () => {
   const videoRef = useRef()
@@ -42,7 +44,6 @@ const App = () => {
         width,
         height
       ])
-
       videoRef.current.play()
       trackAndRender(tracker)
     }
@@ -54,9 +55,11 @@ const App = () => {
     <>
       <video
         ref={videoRef}
-        src="/video/test.mp4"
+        src={VIDEO}
         muted
         onLoadedData={handleVideoLoad}
+        width="480"
+        height="360"
       />
       <canvas
         ref={canvasRef}
