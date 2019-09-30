@@ -1,6 +1,6 @@
 {
   "name": "@cloud-annotations/object-tracking",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Simple object tracking in js",
   "jsdelivr": "dist/object-tracking.min.js",
   "keywords": [
