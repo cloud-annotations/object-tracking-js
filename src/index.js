@@ -15,7 +15,7 @@ const ImageWithCanvas = ({ src, tracker }) => {
 
       ctx.drawImage(e.target, 0, 0)
 
-      const box = tracker.track(e.target)
+      const box = tracker.next(e.target)
 
       ctx.rect(box[0], box[1], box[2], box[3])
       ctx.stroke()
