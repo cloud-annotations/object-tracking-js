@@ -160,6 +160,11 @@ export const findIndex2d = (matrix, val) => {
     .transpose()
 }
 
+export const findIndex2dAsync = async (matrix, val) => {
+  const positions = await tf.whereAsync(matrix.equal(val))
+  return positions.transpose()
+}
+
 export const complexMul = (a, b) =>
   tf.tidy(() => {
     // CASES:
