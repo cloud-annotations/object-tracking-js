@@ -2,8 +2,9 @@
 [![NPM Version](https://img.shields.io/npm/v/@cloud-annotations/object-tracking.svg)](https://npmjs.org/package/@cloud-annotations/object-tracking)
 [![NPM Downloads](https://img.shields.io/npm/dm/@cloud-annotations/object-tracking.svg)](https://npmjs.org/package/@cloud-annotations/object-tracking)
 
-Simple object tracking in js
-![Demo](https://media.giphy.com/media/YpvymI4gUGVHhSaT5C/giphy.gif)
+![Demo](object-track.gif)
+
+Simple object tracking in with TensorFlow.js. Just draw a box and track it as it moves across the video, no training required.
 
 ## Installation
 ```bash
