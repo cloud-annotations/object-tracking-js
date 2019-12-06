@@ -6,7 +6,7 @@
 
 [![Edit cranky-keller-cp4ms](https://codesandbox.io/static/img/play-codesandbox.svg)](https://codesandbox.io/s/cranky-keller-cp4ms?fontsize=14&hidenavigation=1&theme=dark)
 
-#### Simple object tracking with TensorFlow.js.
+### Simple object tracking with TensorFlow.js.
 
 Just draw a box and track it as it moves across the video, no training required.
 
