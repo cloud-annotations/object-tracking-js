@@ -4,7 +4,11 @@
 
 ![Demo](object-track.gif)
 
-Simple object tracking in with TensorFlow.js. Just draw a box and track it as it moves across the video, no training required.
+[Try it out](cp4ms.csb.app)
+
+Simple object tracking with TensorFlow.js.
+
+Just draw a box and track it as it moves across the video, no training required.
 
 ## Installation
 ```bash
